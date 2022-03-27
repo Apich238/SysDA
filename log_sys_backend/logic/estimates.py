@@ -63,6 +63,20 @@ class SetForm(Form):
         else:
             self.members = members.copy()
 
+    def __eq__(self, other):
+        if type(other)!=type(self):
+            return False
+        a=self.members.copy()
+        a=sorted(a,key=str)
+        b=other.members.copy()
+        b=sorted(b,key=str)
+        if len(a)!=len(b):
+            return False
+        for x,y in zip(a,b):
+            if x!=y:
+                return False
+        return True
+
 
 class ConForm(SetForm):
     def __init__(self, members):
@@ -119,6 +133,7 @@ def eval_expr(expr):
 
 class EstForm(Form):
     def __init__(self, expr: Form, cmpsign, est: float):
+        # TODO: использовать decimal
         self.expr = expr
         if cmpsign in ['<=', '<', '>', '>=']:
             self.cmpsign = cmpsign
@@ -190,7 +205,7 @@ def make_estimates_parser():
     #            )
     return PEG('start',
                {
-                   'atom': '[abcdwxyz][0-9a-z]*',
+                   'atom': '[abcdpqwxyz][0-9a-z]*',
                    'rule_dummy': '[A-Z]+',
                    'number': r'1|0(\.[0-9]*)?',
                    'min': 'min',

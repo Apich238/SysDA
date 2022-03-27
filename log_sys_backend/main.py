@@ -3,14 +3,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from logic.estimates import *
-from logic.inference2 import *
+from logic.inference3 import *
 
 
 def get_tree(formula):
     parser = make_estimates_parser()
-    fl = parse_formula(parser, formula)
-    print(str(fl))
-    tree = build_full_tree_v3([fl])
+    formulas=formula.split(';')
+    fls = [parse_formula(parser, formula) for formula in formulas]
+    print(str(fls))
+    tree = build_full_tree(fls)
     return tree.to_dict()
 
 
