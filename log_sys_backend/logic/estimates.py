@@ -1,4 +1,4 @@
-from .myPEG import *
+from myPEG import *
 
 
 class Form:

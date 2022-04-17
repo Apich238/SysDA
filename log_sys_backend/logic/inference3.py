@@ -1,5 +1,5 @@
 # from log_sys_backend.logic\
-from .estimates import *
+from estimates import *
 
 from collections import defaultdict
 
@@ -221,7 +221,7 @@ rules_base = [
 
 rules = [infrule(x[1], x[2], x[3], x[0]) for x in rules_base]
 
-rules = sorted(rules, key=lambda x: x.priority, reverse=True)
+rules = sorted(rules, key=lambda x: x.priority*10-1*len(x.format_in), reverse=True)
 
 # region atable nodes classes
 
@@ -240,71 +240,6 @@ rules = sorted(rules, key=lambda x: x.priority, reverse=True)
 6. шаги, где она использована
 
 '''
-
-#
-# class atable_tree_node:
-#     def __init__(self, created_step, rule_id):
-#         self.created_step = created_step
-#         self.rule_id = rule_id
-#
-#     def __str__(self):
-#         return self.__repr__()
-#
-#     def __repr__(self):
-#         raise NotImplementedError()
-#
-#     def to_dict(self):
-#         raise NotImplementedError()
-#
-#
-# class atable_tree_node_opened_end(atable_tree_node):
-#     def __init__(self, created_step, rule_id, id=0):
-#         super().__init__(created_step, rule_id)
-#         self.open_branch_id = id
-#
-#     def __repr__(self):
-#         return '{}:(O#{})'.format(self.created_step, self.open_branch_id)
-#
-#     # def __str__(self):
-#     #     return '{}:(O)'.format(self.processed_step)
-#
-#     def to_dict(self):
-#         return {'name': '{}:(O)'.format(self.created_step), 'children': []}
-#
-#
-# class atable_tree_node_closed_end(atable_tree_node):
-#     def __init__(self, created_step, rule_id):
-#         super().__init__(created_step, rule_id)
-#
-#     def __repr__(self):
-#         return '{}:(X)'.format(self.created_step)
-#
-#     # def __str__(self):
-#     #     return '{}:(X)'.format(self.processed_step)
-#
-#     def to_dict(self):
-#         return {'name': '{}:(X)'.format(self.processed_step), 'children': []}
-#
-#
-# class atable_tree_node_usual(atable_tree_node):
-#     def __init__(self, created_step, rule_id, formula, childs, usages):
-#         super().__init__(created_step, rule_id)
-#         self.formula = formula
-#         self.childs = childs
-#         self.formula = formula
-#         self.rule_id = rule_id
-#         self.usages = usages
-#
-#     def __repr__(self):
-#         return '{}:{}'.format(self.created_step, self.formula)
-#
-#     # def __str__(self):
-#     #     return '{}:{}'.format(self.processed_step, self.formula)
-#
-#     def to_dict(self):
-#         return {'name': '{}(rule {}):{}[{}]'.format(self.created_step, self.rule_id, self.formula, self.usages),
-#                 'children': [x.to_dict() for x in self.childs]}
-
 
 # endregion
 
@@ -333,17 +268,6 @@ rules = sorted(rules, key=lambda x: x.priority, reverse=True)
 """
 
 
-# def is_literal(f: Form):
-#     if isinstance(f, EstForm) and isinstance(f.expr, AtomForm):
-#         return True
-#     else:
-#         return False
-#
-#
-# def literals_have_contradiction(literals):
-#     return False
-
-
 class counter:
     def __init__(self):
         self._i = 0
@@ -367,7 +291,8 @@ class counter:
 этот метод поддерживает контекст - список всех родительских узлов с метками о том, какие из них ранее в этой ветви уже были использованы.
 '''
 
-#TODO: решить проблему с производительностью и потреблением памяти
+
+# TODO: решить проблему с производительностью и потреблением памяти
 class atree:
     def __init__(self, formulas=None, rule_id='init', cntr=None, step=None):
         if cntr is None:
@@ -408,6 +333,9 @@ class atree:
             branch_prefix = []
             used = []
         branch_prefix = branch_prefix + [self]
+
+        print(branch_prefix)
+
         used = used + [False]
         if len(self.childs) > 0:
             for ch in self.childs:
@@ -422,7 +350,7 @@ class atree:
             if t is not None:
                 rule_i, matching_ids, subst_dict = t
             # 2. если не подобрали - среди всех формул
-            print('TODO: ДОПУСКАЕТСЯ ЛИ ПОСТОРНОЕ ИСПОЛЬЗОВАНИЕ УЗЛОВ В ОДНОЙ ВЕТВИ?')
+            # print('TODO: ДОПУСКАЕТСЯ ЛИ ПОСТОРНОЕ ИСПОЛЬЗОВАНИЕ УЗЛОВ В ОДНОЙ ВЕТВИ?')
             # if t is None:
             #     t = self.select_action(branch_prefix, [1] * len(branch_prefix), rules)
             #     if t is not None:
@@ -466,19 +394,30 @@ class atree:
 
     def select_action(self, nodes, nodel_mask, rules):
 
+        # def generate_substitutions_rec(k, n_list):
+        #     if k == 1:
+        #         return [[x] for x in n_list]
+        #     ress = []
+        #     for e in n_list:
+        #         t = n_list.copy()
+        #         t.remove(e)
+        #         ress.extend([[e] + x for x in generate_substitutions_rec(k - 1, t)])
+        #     return ress
+
         def generate_substitutions_rec(k, n_list):
             if k == 1:
-                return [[x] for x in n_list]
-            ress = []
-            for e in n_list:
-                t = n_list.copy()
-                t.remove(e)
-                ress.extend([[e] + x for x in generate_substitutions_rec(k - 1, t)])
-            return ress
+                for x in n_list:
+                    yield [x]
+            else:
+                for j, e in enumerate(n_list):
+                    t = n_list[:j] + n_list[j + 1:]
+                    for t in generate_substitutions_rec(k - 1, t):
+                        yield [e] + t
 
-        def check_rule(nodes, rule, nodes_mask):
+        def check_rule(nodes, rule,
+                       nodes_mask):  ###############################################################################################################################
             # дано правило и список узлов.
-            # надо определить, есть ли среду узлов такие, что формируют предпосылку для правила
+            # надо определить, есть ли среди узлов такие, что формируют предпосылку для правила
             # если есть - вернуть индексы, соответственно порядку в правиле
             # если нет - вернуть None
 
@@ -488,9 +427,9 @@ class atree:
             substitutions = generate_substitutions_rec(len(rule.format_in_f), nodes_ids)
 
             for i, ids in enumerate(substitutions):
+                print(ids)
                 selected = [nodes[j] for j in ids]
-                print('', end='')
-                x = rule.try_to_match([nodes[j] for j in ids])
+                x = rule.try_to_match(selected)
                 if x is not None:
                     return ids, x
 
@@ -530,7 +469,7 @@ def get_tree():
     #     '(~(q1&q3)>=0.6)',
     #     '((q3>=0.9)=>((~p1>=0.7)&((~p3>=0.2)&(p5>=1))))'
     # ]
-    formulas = '(q1=>(~p1&(~p2&(p3&p5))));((~p1&(~p2&(p3&p5)))=>q1);((p2&p4)>=0.3);((p2&p4)<=0.3);(~(q1&q3)>=0.6);((q3>=0.9)=>((~p1>=0.7)&((~p3>=0.2)&(p5>=1))))'.spliT(
+    formulas = '(q1=>(~p1&(~p2&(p3&p5))));((~p1&(~p2&(p3&p5)))=>q1);((p2&p4)>=0.3);((p2&p4)<=0.3);(~(q1&q3)>=0.6);((q3>=0.9)=>((~p1>=0.7)&((~p3>=0.2)&(p5>=1))))'.split(
         ';')
 
     parser = make_estimates_parser()
@@ -542,4 +481,14 @@ def get_tree():
 
 
 if __name__ == '__main__':
-    get_tree()
+    import cProfile
+
+    cProfile.run("get_tree()", filename=None, sort=-1)
+    # t = get_tree()
+
+    import random
+    import winsound
+
+    for _ in range(30):
+        f = int(random.uniform(1024, 4096))
+        winsound.Beep(f, 450)
