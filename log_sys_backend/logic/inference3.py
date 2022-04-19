@@ -42,58 +42,56 @@ class infrule:
         # возвращает подстановку, если формула подходит под шаблон, и None в противном случае
 
         dummies_matching_dict = {}
-        fl = sf  # flist[0]
-        if isinstance(fl, atree):
-            fl = fl.formula
-        sr = pattern
-        if isinstance(sr, RuleDummyForm):
-            return {sr.name: fl}
-        if not isinstance(fl, type(sr)):
+        if isinstance(sf, atree):
+            sf = sf.formula
+        if isinstance(pattern, RuleDummyForm):
+            return {pattern.name: sf}
+        if not isinstance(sf, type(pattern)):
             return None
         # types are same. matching childs
-        if isinstance(fl, (ConForm, DisForm)):
-            if len(fl.members) != len(sr.members):
+        if isinstance(sf, (ConForm, DisForm)):
+            if len(sf.members) != len(pattern.members):
                 # match first elements and then second to last with second rule member
-                t1 = self.try_to_match_one_formula(fl.members[0], sr.members[0])
+                t1 = self.try_to_match_one_formula(sf.members[0], pattern.members[0])
                 if t1 is None:
                     return None
                 dummies_matching_dict.update(t1)
-                fld = (ConForm if isinstance(fl, ConForm) else DisForm)(fl.members[1:])
-                t2 = self.try_to_match_one_formula(fld, sr.members[1])
+                fld = (ConForm if isinstance(sf, ConForm) else DisForm)(sf.members[1:])
+                t2 = self.try_to_match_one_formula(fld, pattern.members[1])
                 if t2 is None:
                     return None
                 dummies_matching_dict.update(t2)
             else:
-                for i in range(len(fl.members)):
-                    t = self.try_to_match_one_formula(fl.members[i], sr.members[i])
+                for i in range(len(sf.members)):
+                    t = self.try_to_match_one_formula(sf.members[i], pattern.members[i])
                     if t is None:
                         return None
                     dummies_matching_dict.update(t)
             return dummies_matching_dict
 
-        elif isinstance(fl, NegForm):
-            return self.try_to_match_one_formula(fl.value, sr.value)
-        elif isinstance(fl, ImpForm):
-            t1 = self.try_to_match_one_formula(fl.a, sr.a)
+        elif isinstance(sf, NegForm):
+            return self.try_to_match_one_formula(sf.value, pattern.value)
+        elif isinstance(sf, ImpForm):
+            t1 = self.try_to_match_one_formula(sf.a, pattern.a)
             if t1 is None:
                 return None
-            t2 = self.try_to_match_one_formula(fl.b, sr.b)
+            t2 = self.try_to_match_one_formula(sf.b, pattern.b)
             if t2 is None:
                 return None
             dummies_matching_dict.update(t1)
             dummies_matching_dict.update(t2)
             return dummies_matching_dict
-        elif isinstance(fl, EstForm):
-            if fl.cmpsign != sr.cmpsign:
+        elif isinstance(sf, EstForm):
+            if sf.cmpsign != pattern.cmpsign:
                 return None
-            if isinstance(sr.est, RuleDummyForm):
-                dummies_matching_dict[sr.est.name] = fl.est
-            elif isinstance(sr.est, float):
-                if sr.est != fl.est:
+            if isinstance(pattern.est, RuleDummyForm):
+                dummies_matching_dict[pattern.est.name] = sf.est
+            elif isinstance(pattern.est, float):
+                if pattern.est != sf.est:
                     return None
             else:
                 print()
-            t = self.try_to_match_one_formula(fl.expr, sr.expr)
+            t = self.try_to_match_one_formula(sf.expr, pattern.expr)
             if t is None:
                 return None
             dummies_matching_dict.update(t)
@@ -221,7 +219,7 @@ rules_base = [
 
 rules = [infrule(x[1], x[2], x[3], x[0]) for x in rules_base]
 
-rules = sorted(rules, key=lambda x: x.priority*10-1*len(x.format_in), reverse=True)
+rules = sorted(rules, key=lambda x: x.priority * 10 - 1 * len(x.format_in), reverse=True)
 
 # region atable nodes classes
 
@@ -291,6 +289,7 @@ class counter:
 этот метод поддерживает контекст - список всех родительских узлов с метками о том, какие из них ранее в этой ветви уже были использованы.
 '''
 
+from itertools import product
 
 # TODO: решить проблему с производительностью и потреблением памяти
 class atree:
@@ -414,8 +413,18 @@ class atree:
                     for t in generate_substitutions_rec(k - 1, t):
                         yield [e] + t
 
-        def check_rule(nodes, rule,
-                       nodes_mask):  ###############################################################################################################################
+        def join_substs(s1, s2):
+            # объединяет 2 подстановки. если они не совместны - возвращает None
+            s_joined = s1.copy()
+            for k in s2:
+                if k in s_joined and s1[k] != s2[k]:
+                    return None
+                else:
+                    s_joined[k] = s2[k]
+            return s_joined
+
+        def check_rule(nodes, rule, nodes_mask):
+            #####################################################################################################################################
             # дано правило и список узлов.
             # надо определить, есть ли среди узлов такие, что формируют предпосылку для правила
             # если есть - вернуть индексы, соответственно порядку в правиле
@@ -423,16 +432,52 @@ class atree:
 
             # берём индексы узлов по маске
             nodes_ids = [i for i in range(len(nodes)) if nodes_mask[i]]
+
+            # v1
             # генерируем все подстановки узлов на место выражений в правиле
-            substitutions = generate_substitutions_rec(len(rule.format_in_f), nodes_ids)
+            # substitutions = generate_substitutions_rec(len(rule.format_in_f), nodes_ids)
 
-            for i, ids in enumerate(substitutions):
-                print(ids)
-                selected = [nodes[j] for j in ids]
-                x = rule.try_to_match(selected)
-                if x is not None:
-                    return ids, x
+            # for i, ids in enumerate(substitutions):
+            #     selected = [nodes[j] for j in ids]
+            #     x = rule.try_to_match(selected)
+            #     if x is not None:
+            #         return ids, x
 
+            # v2
+            # строим все возможные сопоставления всех правил и шаблонов, потом выбираем совместный набор сопоставлений
+            matches = []
+            for i, pattern in enumerate(rule.format_in_f):
+                l = []
+                for ni in nodes_ids:
+                    simple_match = rule.try_to_match_one_formula(nodes[ni], pattern)
+                    if simple_match is not None:
+                        l.append((ni, simple_match))
+                matches.append(l)
+
+
+            for t in product(*matches):
+                # все сопоставления должны относиться к разным формулам. поэтому считаем количество различных индексов
+                # в сопоставлении и если оно меньше числа шаблонов  в правиле - пропускаем
+                if len({x[0] for x in t}) < len(t):
+                    continue
+
+                # надо проверить словари из списка на совместимость
+                # будем составлять общий словарь-подстановку. если получится - подстановки применима.
+                subst = {}
+                fls = []
+                for ni, pt_subst in t:
+                    subst = join_substs(subst, pt_subst)
+                    if subst is not None:
+                        fls.append(ni)
+                    else:
+                        break
+                if subst is not None:
+                    if len(rule.format_in_f_additional) == 0 or \
+                            len(rule.format_in_f_additional) > 0 and \
+                            interpret_comparison(rule.format_in_f_additional[0].subst(subst)):
+                        return fls, subst
+                    else:
+                        continue
             return None
 
         for rule_i, rule in enumerate(rules):

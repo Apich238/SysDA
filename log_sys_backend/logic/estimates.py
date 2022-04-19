@@ -64,16 +64,16 @@ class SetForm(Form):
             self.members = members.copy()
 
     def __eq__(self, other):
-        if type(other)!=type(self):
+        if type(other) != type(self):
             return False
-        a=self.members.copy()
-        a=sorted(a,key=str)
-        b=other.members.copy()
-        b=sorted(b,key=str)
-        if len(a)!=len(b):
+        a = self.members.copy()
+        a = sorted(a, key=str)
+        b = other.members.copy()
+        b = sorted(b, key=str)
+        if len(a) != len(b):
             return False
-        for x,y in zip(a,b):
-            if x!=y:
+        for x, y in zip(a, b):
+            if x != y:
                 return False
         return True
 
