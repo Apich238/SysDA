@@ -1,5 +1,5 @@
 # from log_sys_backend.logic\
-from estimates import *
+from .estimates import *
 
 from collections import defaultdict
 
@@ -38,100 +38,39 @@ class infrule:
     # def __repr__(self):
     #     return str([self.format_in, self.format_out_f])
 
-    def try_to_match_one_formula(self, sf, pattern):
-        # возвращает подстановку, если формула подходит под шаблон, и None в противном случае
-
-        dummies_matching_dict = {}
-        if isinstance(sf, atree):
-            sf = sf.formula
-        if isinstance(pattern, RuleDummyForm):
-            return {pattern.name: sf}
-        if not isinstance(sf, type(pattern)):
-            return None
-        # types are same. matching childs
-        if isinstance(sf, (ConForm, DisForm)):
-            if len(sf.members) != len(pattern.members):
-                # match first elements and then second to last with second rule member
-                t1 = self.try_to_match_one_formula(sf.members[0], pattern.members[0])
-                if t1 is None:
-                    return None
-                dummies_matching_dict.update(t1)
-                fld = (ConForm if isinstance(sf, ConForm) else DisForm)(sf.members[1:])
-                t2 = self.try_to_match_one_formula(fld, pattern.members[1])
-                if t2 is None:
-                    return None
-                dummies_matching_dict.update(t2)
-            else:
-                for i in range(len(sf.members)):
-                    t = self.try_to_match_one_formula(sf.members[i], pattern.members[i])
-                    if t is None:
-                        return None
-                    dummies_matching_dict.update(t)
-            return dummies_matching_dict
-
-        elif isinstance(sf, NegForm):
-            return self.try_to_match_one_formula(sf.value, pattern.value)
-        elif isinstance(sf, ImpForm):
-            t1 = self.try_to_match_one_formula(sf.a, pattern.a)
-            if t1 is None:
-                return None
-            t2 = self.try_to_match_one_formula(sf.b, pattern.b)
-            if t2 is None:
-                return None
-            dummies_matching_dict.update(t1)
-            dummies_matching_dict.update(t2)
-            return dummies_matching_dict
-        elif isinstance(sf, EstForm):
-            if sf.cmpsign != pattern.cmpsign:
-                return None
-            if isinstance(pattern.est, RuleDummyForm):
-                dummies_matching_dict[pattern.est.name] = sf.est
-            elif isinstance(pattern.est, float):
-                if pattern.est != sf.est:
-                    return None
-            else:
-                print()
-            t = self.try_to_match_one_formula(sf.expr, pattern.expr)
-            if t is None:
-                return None
-            dummies_matching_dict.update(t)
-            return dummies_matching_dict
-        else:
-            raise ValueError()
-
-    def try_to_match(self, flist, pattern=None):
-        if pattern is None:
-            pattern = self.format_in_f
-        if len(pattern) == 1:
-            # если в шаблон - только на 1 формулу, просто перебираем формулы и применяем правило, если нашлось соответствие
-            for sf in flist:
-                t = self.try_to_match_one_formula(sf, pattern[0])
-                if t is not None:
-                    return t
-            return None
-
-        if len(pattern) >= 2:
-            dummies_matching_dict = {}  # подстановка, при применении которой к шаблону получаем формулу
-            if len(pattern) != len(flist):
-                return None
-
-            for pattern_part, f in zip(pattern, flist):
-                x = self.try_to_match_one_formula(f.formula, pattern_part)
-                if x is None:
-                    return None
-                # update dict properly
-                for k in x:
-                    if not k in dummies_matching_dict:
-                        dummies_matching_dict[k] = x[k]
-                    else:
-                        if dummies_matching_dict[k] != x[k]:
-                            return None
-                # dummies_matching_dict.update(x)
-            for addcnd in self.format_in_f_additional:
-                a = addcnd.subst(dummies_matching_dict)
-                if not interpret_comparison(a):
-                    return None
-            return dummies_matching_dict
+    # def try_to_match(self, flist, pattern=None):
+    #     if pattern is None:
+    #         pattern = self.format_in_f
+    #     if len(pattern) == 1:
+    #         # если в шаблон - только на 1 формулу, просто перебираем формулы и применяем правило, если нашлось соответствие
+    #         for sf in flist:
+    #             t = self.try_to_match_one_formula(sf, pattern[0])
+    #             if t is not None:
+    #                 return t
+    #         return None
+    #
+    #     if len(pattern) >= 2:
+    #         dummies_matching_dict = {}  # подстановка, при применении которой к шаблону получаем формулу
+    #         if len(pattern) != len(flist):
+    #             return None
+    #
+    #         for pattern_part, f in zip(pattern, flist):
+    #             x = self.try_to_match_one_formula(f.formula, pattern_part)
+    #             if x is None:
+    #                 return None
+    #             # update dict properly
+    #             for k in x:
+    #                 if not k in dummies_matching_dict:
+    #                     dummies_matching_dict[k] = x[k]
+    #                 else:
+    #                     if dummies_matching_dict[k] != x[k]:
+    #                         return None
+    #             # dummies_matching_dict.update(x)
+    #         for addcnd in self.format_in_f_additional:
+    #             a = addcnd.subst(dummies_matching_dict)
+    #             if not interpret_comparison(a):
+    #                 return None
+    #         return dummies_matching_dict
 
     def apply(self, dummies_matching_dict):
         if self.format_out_f is None:
@@ -141,6 +80,70 @@ class infrule:
 
     def __str__(self):
         return '{} & {} |-> {}'.format(self.format_in_f, self.format_in_f_additional, self.format_out_f)
+
+
+def try_to_match_one_formula(sf, pattern):
+    # возвращает подстановку, если формула подходит под шаблон, и None в противном случае
+
+    #вот стоило эту функцию сделать функцией, а не методом класса, вместо 150 секунд выполнение сократилось до 0.5.
+
+    dummies_matching_dict = {}
+    if isinstance(sf, atree):
+        sf = sf.formula
+    if isinstance(pattern, RuleDummyForm):
+        return {pattern.name: sf}
+    if not isinstance(sf, type(pattern)):
+        return None
+    # types are same. matching childs
+    if isinstance(sf, (ConForm, DisForm)):
+        if len(sf.members) != len(pattern.members):
+            # match first elements and then second to last with second rule member
+            t1 = try_to_match_one_formula(sf.members[0], pattern.members[0])
+            if t1 is None:
+                return None
+            dummies_matching_dict.update(t1)
+            fld = (ConForm if isinstance(sf, ConForm) else DisForm)(sf.members[1:])
+            t2 = try_to_match_one_formula(fld, pattern.members[1])
+            if t2 is None:
+                return None
+            dummies_matching_dict.update(t2)
+        else:
+            for i in range(len(sf.members)):
+                t = try_to_match_one_formula(sf.members[i], pattern.members[i])
+                if t is None:
+                    return None
+                dummies_matching_dict.update(t)
+        return dummies_matching_dict
+
+    elif isinstance(sf, NegForm):
+        return try_to_match_one_formula(sf.value, pattern.value)
+    elif isinstance(sf, ImpForm):
+        t1 = try_to_match_one_formula(sf.a, pattern.a)
+        if t1 is None:
+            return None
+        t2 = try_to_match_one_formula(sf.b, pattern.b)
+        if t2 is None:
+            return None
+        dummies_matching_dict.update(t1)
+        dummies_matching_dict.update(t2)
+        return dummies_matching_dict
+    elif isinstance(sf, EstForm):
+        if sf.cmpsign != pattern.cmpsign:
+            return None
+        if isinstance(pattern.est, RuleDummyForm):
+            dummies_matching_dict[pattern.est.name] = sf.est
+        elif isinstance(pattern.est, float):
+            if pattern.est != sf.est:
+                return None
+        else:
+            print()
+        t = try_to_match_one_formula(sf.expr, pattern.expr)
+        if t is None:
+            return None
+        dummies_matching_dict.update(t)
+        return dummies_matching_dict
+    else:
+        raise ValueError()
 
 
 """
@@ -290,6 +293,7 @@ class counter:
 '''
 
 from itertools import product
+
 
 # TODO: решить проблему с производительностью и потреблением памяти
 class atree:
@@ -449,11 +453,10 @@ class atree:
             for i, pattern in enumerate(rule.format_in_f):
                 l = []
                 for ni in nodes_ids:
-                    simple_match = rule.try_to_match_one_formula(nodes[ni], pattern)
+                    simple_match = try_to_match_one_formula(nodes[ni], pattern)
                     if simple_match is not None:
                         l.append((ni, simple_match))
                 matches.append(l)
-
 
             for t in product(*matches):
                 # все сопоставления должны относиться к разным формулам. поэтому считаем количество различных индексов
@@ -531,9 +534,9 @@ if __name__ == '__main__':
     cProfile.run("get_tree()", filename=None, sort=-1)
     # t = get_tree()
 
-    import random
-    import winsound
-
-    for _ in range(30):
-        f = int(random.uniform(1024, 4096))
-        winsound.Beep(f, 450)
+    # import random
+    # import winsound
+    #
+    # for _ in range(30):
+    #     f = int(random.uniform(1024, 4096))
+    #     winsound.Beep(f, 450)

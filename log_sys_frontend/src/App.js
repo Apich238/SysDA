@@ -20,7 +20,7 @@ function App() {
         style={{width:'40em'}}
       />
       <button onClick={get_tree}>построить дерево</button>
-      <div style={{ width: '50em', height: '40em' }}>
+      <div style={{ width: '100%', height: '40em' }}>
         <Tree
           data={tree}
           pathFunc="step"
