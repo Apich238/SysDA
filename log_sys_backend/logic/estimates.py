@@ -175,35 +175,6 @@ class SignedForm(Form):
 
 
 def make_estimates_parser():
-    # return PEG('start',
-    #            {
-    #                'atom': '[a-z][0-9a-z]*',
-    #                'rule_dummy': '[A-Z]+',
-    #                'estval': r'1|0(\.[0-9]*)?',
-    #                'ops': '[(]',
-    #                'cls': '[)]',
-    #                'neg': '~',
-    #                'disj': r'\|',
-    #                'conj': r'&',
-    #                'impl': r'=>',
-    #                'sign': r'\+|-',
-    #                'cmpsign': '<=|>=|<|>'
-    #            },
-    #            {
-    #                'prop': sel('propimp', 'propdis'),
-    #                'propimp': ['propdis', 'impl', 'propdis'],
-    #                'propdis': ['propcon', zom(['disj', 'propcon'])],
-    #                'propcon': ['atomicprop', zom(['conj', 'atomicprop'])],
-    #                'atomicprop': sel('atom', 'rule_dummy', ['neg', 'atomicprop'], ['ops', 'prop', 'cls']),
-    #                'estprop': ['prop', 'cmpsign', sel('estval', 'rule_dummy')],
-    #                'estlog': sel('estimp', 'estdis'),
-    #                'estimp': ['estdis', 'impl', 'estdis'],
-    #                'estdis': ['estcon', zom(['disj', 'estcon'])],
-    #                'estcon': ['estatomic', zom(['conj', 'estatomic'])],
-    #                'estatomic': sel('estprop', ['neg', 'estatomic'], ['ops', 'estlog', 'cls']),
-    #                'start': [opt('sign'), 'estlog']
-    #            }
-    #            )
     return PEG('start',
                {
                    'atom': '[abcdpqwxyz][0-9a-z]*',

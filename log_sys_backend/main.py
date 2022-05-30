@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from logic.estimates import *
-from logic.inference3 import *
+from logic.inference import *
 
 
 def get_tree(formula):
@@ -32,7 +32,7 @@ app.add_middleware(
 
 @app.get("/")
 def root():
-    return {"suck": 'cock'}
+    return {"hello": 'world'}
 
 
 from pydantic import BaseModel

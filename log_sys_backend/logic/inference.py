@@ -1,463 +1,416 @@
 from .estimates import *
 
 
-def reduce(liters, name):
-    company = [x for x in liters if x.expr.name == name]
-    oth = [x for x in liters if x.expr.name != name]
+def interpret_comparison(e: EstForm):
+    if e.cmpsign == '<':
+        return e.expr < e.est
+    if e.cmpsign == '<=':
+        return e.expr <= e.est
+    if e.cmpsign == '>':
+        return e.expr > e.est
+    if e.cmpsign == '>=':
+        return e.expr >= e.est
+    raise TypeError()
 
-    gsigns = ['>', '>=']
-    lsigns = ['<', '<=']
 
-    greaters = [x for x in company if x.cmpsign in gsigns]
-    lessers = [x for x in company if x.cmpsign in lsigns]
+class infrule:
+    def __init__(self, format_in, format_out, priority, id):
+        ep = make_estimates_parser()
+        self.format_in = format_in
+        self.id = id
+        self.format_in_f = [parse_formula(ep, x) for x in format_in]
 
-    resg = None
-    resl = None
+        self.format_in_f_additional = []  # условия на только оценки
+        if len(self.format_in_f) > 2 and isinstance(self.format_in_f[-1], EstForm):
+            uu = self.format_in_f.pop(-1)
+            self.format_in_f_additional = [uu]
 
-    if len(greaters) > 1:  # φ ≥ a, φ ≥ b    ====>   φ ≥ max{a, b}
-        m = 0
-        for k, l in enumerate(greaters):
-            if l.est > greaters[m].est:
-                m = k
-        cands = [x for x in greaters if x.est == greaters[m].est]
-        if len(cands) == 1:
-            resg = cands[0]
+        self.format_out = format_out
+        if format_out is not None:
+            self.format_out_f = [[parse_formula(ep, pf) for pf in l] for l in format_out]
         else:
-            s1 = [x for x in cands if x.cmpsign == '>']
-            s2 = [x for x in cands if x.cmpsign == '>=']
-            if len(s1) > 0:
-                resg = s1[0]
-            else:
-                resg = s2[0]
-    elif len(greaters) == 1:
-        resg = greaters[0]
+            self.format_out_f = None
+        self.priority = priority
 
-    if len(lessers) > 1:  # φ ≤ a, φ ≤ b      ====>        φ ≤ min{a, b
-        m = 0
-        for k, l in enumerate(lessers):
-            if l.est < lessers[m].est:
-                m = k
-        cands = [x for x in lessers if x.est == lessers[m].est]
-        if len(cands) == 1:
-            resl = cands[0]
-        else:
-            s1 = [x for x in cands if x.cmpsign == '<']
-            s2 = [x for x in cands if x.cmpsign == '<=']
-            if len(s1) > 0:
-                resl = s1[0]
-            else:
-                resl = s2[0]
-    elif len(lessers) == 1:
-        resl = lessers[0]
-
-    if resg is not None and resl is not None:
-        b = resg.cmpsign
-        c = resl.cmpsign
-        if resg.est > resl.est or resg.est == resl.est and (b, c) in [('>=', '<'), ('>', '<='), ('>', '<')]:
+    def apply(self, dummies_matching_dict):
+        if self.format_out_f is None:
             return None
-
-    if resg is not None:
-        oth.append(resg)
-    if resl is not None:
-        oth.append(resl)
-
-    return oth
-
-
-def consistent_insert(liters, newlitera):
-    names = set([x.expr.name for x in liters])
-    if newlitera.expr.name not in names:
-        return liters + [newlitera]
-    else:
-        new_liters = liters + [newlitera]
-        res = reduce(new_liters, newlitera.expr.name)
+        res = [[m.subst(dummies_matching_dict) for m in bs] for bs in self.format_out_f]
         return res
 
+    def __str__(self):
+        return '{} & {} |-> {}'.format(self.format_in_f, self.format_in_f_additional, self.format_out_f)
 
-def atables_open_branches(formulas, liters=None):
-    if liters is None:
-        liters = []
 
-    # region defs
-    def is_atom(f: Form):
-        return isinstance(f, AtomForm) or isinstance(f, EstForm) and isinstance(f.expr, AtomForm)
-
-    def is_alpha1(f: Form):
-        '''
-        истинно для формулы, елси при применении к ней правил, ко множеству термов прибавляется одно новое выражение
-        :param f:
-        :return:
-        '''
-        if isinstance(f, SignedForm):  # +- ~a
-            if isinstance(f.expr, NegForm) or isinstance(f.expr, EstForm):
-                return True
-        elif isinstance(f, NegForm) and isinstance(f.value, EstForm):
-            return True
+def try_to_match_one_formula(sf, pattern):
+    # returns substitution if formula matches pattern, and None otherwise
+    dummies_matching_dict = {}
+    if isinstance(sf, atree):
+        sf = sf.formula
+    if isinstance(pattern, RuleDummyForm):
+        return {pattern.name: sf}
+    if not isinstance(sf, type(pattern)):
+        return None
+    # types are same. matching childs
+    if isinstance(sf, (ConForm, DisForm)):
+        if len(sf.members) != len(pattern.members):
+            # match first elements and then second to last with second rule member
+            t1 = try_to_match_one_formula(sf.members[0], pattern.members[0])
+            if t1 is None:
+                return None
+            dummies_matching_dict.update(t1)
+            fld = (ConForm if isinstance(sf, ConForm) else DisForm)(sf.members[1:])
+            t2 = try_to_match_one_formula(fld, pattern.members[1])
+            if t2 is None:
+                return None
+            dummies_matching_dict.update(t2)
         else:
-            return isinstance(f, EstForm) and isinstance(f.expr, (AtomForm, NegForm))
+            for i in range(len(sf.members)):
+                t = try_to_match_one_formula(sf.members[i], pattern.members[i])
+                if t is None:
+                    return None
+                dummies_matching_dict.update(t)
+        return dummies_matching_dict
 
-    def is_alpha2(f: Form):
-        '''
-         истинно для формулы, если она - конъюнктивного типа, при разложении дающая нексколько термов
-        :param f:
-        :return:
-        '''
-        if isinstance(f, SignedForm):
-            return f.positive and isinstance(f.expr, ConForm) or \
-                   not f.positive and isinstance(f.expr, (DisForm, ImpForm))
-        elif isinstance(f, EstForm):
-            return isinstance(f.expr, ConForm) and f.cmpsign in ['>', '>='] or \
-                   isinstance(f.expr, DisForm) and f.cmpsign in ['<', '<='] or \
-                   isinstance(f.expr, ImpForm) and f.cmpsign in ['<', '<=']
-        return isinstance(f, ConForm)
-
-    def is_beta(f: Form):
-        return not (is_alpha1(f) or is_alpha2(f))
-
-    def select_formula(formulas: list):
-        if len(formulas) == 0:
+    elif isinstance(sf, NegForm):
+        return try_to_match_one_formula(sf.value, pattern.value)
+    elif isinstance(sf, ImpForm):
+        t1 = try_to_match_one_formula(sf.a, pattern.a)
+        if t1 is None:
             return None
-
-        for i, f in enumerate(formulas):
-            if is_atom(f):
-                return i
-        for i, f in enumerate(formulas):
-            if is_alpha1(f):
-                return i
-        for i, f in enumerate(formulas):
-            if is_alpha2(f):
-                return i
-        for i, f in enumerate(formulas):
-            if is_beta(f):
-                return i
-        return 0
-
-    # endregion
-    if len(formulas) == 0:
-        return [liters]
-    res = []
-    locfs = formulas.copy()
-    fi = select_formula(locfs)
-    if fi is None:
-        return []
-    f = locfs[fi]
-    locfs.pop(fi)
-    # print('f:', f, 'forms:', locfs, 'lits:', liters)
-
-    if is_atom(f):
-        j = consistent_insert(liters, f)
-        if j is not None:
-            res.extend(atables_open_branches(locfs, j))
+        t2 = try_to_match_one_formula(sf.b, pattern.b)
+        if t2 is None:
+            return None
+        dummies_matching_dict.update(t1)
+        dummies_matching_dict.update(t2)
+        return dummies_matching_dict
+    elif isinstance(sf, EstForm):
+        if sf.cmpsign != pattern.cmpsign:
+            return None
+        if isinstance(pattern.est, RuleDummyForm):
+            dummies_matching_dict[pattern.est.name] = sf.est
+        elif isinstance(pattern.est, float):
+            if pattern.est != sf.est:
+                return None
         else:
-            return []
+            raise TypeError()
+        t = try_to_match_one_formula(sf.expr, pattern.expr)
+        if t is None:
+            return None
+        dummies_matching_dict.update(t)
+        return dummies_matching_dict
+    else:
+        raise ValueError()
 
-    elif is_alpha1(f):
-        appendix = None
-        if isinstance(f, SignedForm):
-            if isinstance(f.expr, NegForm):  # +- ~a
-                appendix = SignedForm(f.expr.value, '+' if not f.positive else '-')
-            elif isinstance(f.expr, EstForm):  # +- a s r
-                if f.positive:
-                    d = {'>': '>',
-                         '>=': '>=',
-                         '<': '<',
-                         '<=': '<='}
+
+"""
+приоритеты:
+1 - альфа-формулы
+2 - бета-формулы
+3 - сокращения литер
+4 - замыкания
+поля:
+-идентификатор/имя
+-шаблон
+-результат
+-приоритет
+"""
+
+rules_base = [
+    # правила ветвления
+    ['t1r01', ['~~A'], [['A']], 2],
+    ['t1r02', ['(A&B)'], [['A', 'B']], 2],
+    ['t1r02C', ['~(A&B)'], [['~A'], ['~B']], 1],
+    ['t1r03', ['(A|B)'], [['A'], ['B']], 1],
+    ['t1r03C', ['~(A|B)'], [['~A', '~B']], 2],
+    ['t1r04', ['(A=>B)'], [['~A'], ['B']], 1],
+    ['t1r04C', ['~(A=>B)'], [['A', '~B']], 2],
+
+    ['t1r05', ['~(A>=X)'], [['A<X']], 2],
+    ['t1r06', ['~(A>X)'], [['A<=X']], 2],
+    ['t1r07', ['~(A<=X)'], [['A>X']], 2],
+    ['t1r08', ['~(A<X)'], [['A>=X']], 2],
+
+    ['t1r09', ['(~A)>=X'], [['A<=1-X']], 2],
+    ['t1r10', ['(~A)>X'], [['A<1-X']], 2],
+    ['t1r11', ['(~A)<=X'], [['A>=1-X']], 2],
+    ['t1r12', ['(~A)<X'], [['A>1-X']], 2],
+
+    ['t1r13', ['(A&B)>=X'], [['A>=X', 'B>=X']], 2],
+    ['t1r14', ['(A&B)>X'], [['A>X', 'B>X']], 2],
+    ['t1r15', ['(A&B)<=X'], [['A<=X'], ['B<=X']], 1],
+    ['t1r16', ['(A&B)<X'], [['A<X'], ['B<X']], 1],
+
+    ['t1r17', ['(A|B)>=X'], [['A>=X'], ['B>=X']], 1],
+    ['t1r18', ['(A|B)>X'], [['A>X'], ['B>X']], 1],
+    ['t1r19', ['(A|B)<=X'], [['A<=X', 'B<=X']], 2],
+    ['t1r20', ['(A|B)<X'], [['A<X', 'B<X']], 2],
+
+    ['t1r21', ['(A=>B)>=X'], [['A<=1-X'], ['B>=X']], 1],
+    ['t1r22', ['(A=>B)>X'], [['A<1-X'], ['B>X']], 1],
+    ['t1r23', ['(A=>B)<=X'], [['A>=1-X', 'B<=X']], 2],
+    ['t1r24', ['(A=>B)<X'], [['A>1-X', 'B<X']], 2],
+
+    # правила сокращения литер
+
+    ['t2r07', ['A>=X', 'A>=Y'], [['A>=max(X,Y)']], 3],
+    ['t2r08', ['A>=X', 'A>Y'], [['A>max(X,Y)']], 3],
+    ['t2r09', ['A>=X', 'A>Y'], [['A>max(X,Y)']], 3],
+    ['t2r10', ['A>X', 'A>Y'], [['A>max(X,Y)']], 3],
+
+    ['t2r11', ['A<=X', 'A<=Y'], [['A<=min(X,Y)']], 3],
+    ['t2r12', ['A<=X', 'A<Y'], [['A<min(X,Y)']], 3],
+    ['t2r13', ['A<X', 'A<=Y'], [['A<min(X,Y)']], 3],
+    ['t2r14', ['A<X', 'A<Y'], [['A<min(X,Y)']], 3],
+
+    # правила выявления противоречий
+
+    ['t1r25', ['A', '~A'], None, 4],
+
+    ['t1r26', ['A>=X', 'A<X'], None, 4],
+    ['t1r27', ['A>X', 'A<X'], None, 4],
+    ['spec1', ['A>X', 'A<=X'], None, 4],
+
+    ['t1r2829', ['A>=X', 'A<=Y', 'X>Y'], None, 4],
+    ['t1r3031', ['A>X', 'A<=Y', 'X>=Y'], None, 4],
+    ['t1r3233', ['A>X', 'A<Y', 'X>=Y'], None, 4],
+
+]
+
+rules = [infrule(x[1], x[2], x[3], x[0]) for x in rules_base]
+
+rules = sorted(rules, key=lambda x: x.priority * 10 - 1 * len(x.format_in), reverse=True)
+
+
+class counter:
+    def __init__(self):
+        self._i = 0
+
+    def inc(self):
+        a = self._i
+        self._i += 1
+        return a
+
+    def get(self):
+        return self._i
+
+    def __repr__(self):
+        return 'i={}'.format(self._i)
+
+
+from itertools import product
+
+
+class atree:
+    def __init__(self, formulas=None, rule_id='init', cntr=None, step=None):
+        if cntr is None:
+            cntr = counter()
+        self.cntr = cntr
+        if step is None:
+            self.step = cntr.get()
+        else:
+            self.step = step
+        self.rule_id = rule_id
+        self.usages = []
+        if formulas is not None:
+            self.formula = formulas[0]
+        else:
+            self.formula = None
+        self.closed = False
+        self.childs = []
+        if isinstance(formulas, list) and len(formulas) > 1:
+            self.childs.append(atree(formulas[1:], rule_id, cntr, step))
+
+    def __repr__(self):
+        if self.closed:
+            return '(X)'
+        elif self.formula is None:  # == 0:
+            return '(O)'
+        return '{}: {} {}'.format(self.step, str(self.formula), self.usages)
+
+    def to_dict(self):
+        if self.closed:
+            return {'name': '{}(rule {}):(X)'.format(self.step, self.rule_id), 'children': []}
+        elif len(self.childs) == 0:
+            return {'name': '{}(rule {}):(O)'.format(self.step, self.rule_id), 'children': []}
+        return {'name': '{}(rule {}):{}[{}]'.format(self.step, self.rule_id, self.formula, self.usages),
+                'children': [x.to_dict() for x in self.childs]}
+
+    def build(self, branch_prefix=None, used=None):
+        if branch_prefix is None:
+            branch_prefix = []
+            used = []
+        branch_prefix = branch_prefix + [self]
+
+        # print(branch_prefix)
+
+        used = used + [False]
+        if len(self.childs) > 0:
+            for ch in self.childs:
+                ch.build(branch_prefix, used)
+        elif not self.closed:
+            # выбор правила и предпосылок
+            # резальтат применения правила записывается в текущий узел и его потомки
+            # правила уже отсортированы по приоритету
+            # 1. сначала выбираем среди только неиспользованных формул
+            used_mask = [0 if used[i] else 1 for i in range(len(branch_prefix))]
+            t = self.select_action(branch_prefix, used_mask, rules)
+            if t is not None:
+                rule_i, matching_ids, subst_dict = t
+
+            # 3. если и в этот раз не подобрали правило - ветвь открытая
+            if t is None:
+                self.cntr.inc()
+                step = self.cntr.get()
+                nt = atree(None, 'no_rule', self.cntr, step)
+                self.childs = [nt]
+            else:  # иначе:
+                # применение правила
+                rule = rules[rule_i]
+                selected_nodes = [branch_prefix[k] for k in matching_ids]
+                res = rule.apply(subst_dict)
+                # пометка использованных формул
+                self.cntr.inc()
+                step = self.cntr.get()
+                for nd in selected_nodes:
+                    nd.usages.append(step)
+                for ndi in matching_ids:
+                    used[ndi] = True
+                # добавление потомков
+                self.childs = []
+                if res is None:  # замкнутая ветвь
+
+                    nt = atree(None)
+                    nt.step = step
+                    nt.formula = '(X)'
+                    nt.rule_id = rule.id
+                    nt.cntr = self.cntr
+                    nt.closed = True
+                    self.childs = [nt]
+                    return
+                for sub_branch in res:
+                    nt = atree(sub_branch, rule.id, self.cntr, step)
+                    self.childs.append(nt)
+                # рекурсивный вызов
+                for ch in self.childs:
+                    ch.build(branch_prefix, used)
+
+    def select_action(self, nodes, nodel_mask, rules):
+
+        def generate_substitutions_rec(k, n_list):
+            if k == 1:
+                for x in n_list:
+                    yield [x]
+            else:
+                for j, e in enumerate(n_list):
+                    t = n_list[:j] + n_list[j + 1:]
+                    for t in generate_substitutions_rec(k - 1, t):
+                        yield [e] + t
+
+        def join_substs(s1, s2):
+            # объединяет 2 подстановки. если они не совместны - возвращает None
+            s_joined = s1.copy()
+            for k in s2:
+                if k in s_joined and s1[k] != s2[k]:
+                    return None
                 else:
-                    d = {'>=': '<',
-                         '>': '<=',
-                         '<=': '>',
-                         '<': '>='
-                         }
-                appendix = EstForm(f.expr.expr, d[f.expr.cmpsign], f.expr.est)
-        elif isinstance(f, NegForm):  # ~(a s r)
-            assert isinstance(f.value, EstForm)
-            s = f.value.cmpsign
-            s1 = {'<': '>=', '<=': '>', '>': '<=', '>=': '<'}[s]
-            # s1 = {'<=': '>=', '>=': '<='}[s]
-            appendix = EstForm(f.value.expr, s1, f.value.est)
-        elif isinstance(f, EstForm):  # (~a) s r
-            assert isinstance(f.expr, NegForm)
-            s = f.cmpsign
-            # sinv = {'<': '>', '<=': '>=', '>': '<', '>=': '<='}
-            s1 = {'<': '>',
-                  '<=': '>=',
-                  '>': '<',
-                  '>=': '<='}[s]
-            appendix = EstForm(f.expr.value, s1, round(1 - f.est, 6))
-        res = atables_open_branches(locfs + [appendix], liters)
+                    s_joined[k] = s2[k]
+            return s_joined
 
-    elif is_alpha2(f):
-        a = []
-        if isinstance(f, EstForm):
-            s = f.cmpsign
-            r = f.est
-            if isinstance(f.expr, ConForm):  # a&b > >= r
-                a = [EstForm(sf, s, r) for sf in f.expr.members]
-            elif isinstance(f.expr, DisForm):  # a|b < <= r
-                a = [EstForm(sf, s, r) for sf in f.expr.members]
-            elif isinstance(f.expr, ImpForm):  # a=>b < <= r
-                a = [EstForm(f.expr.a, {'<': '>',
-                                        '<=': '>='}[s], round(1 - r, 6)),
-                     EstForm(f.expr.b, s, r)]
-        elif isinstance(f, SignedForm):
-            if isinstance(f.expr, ConForm):  # +a&b
-                a = [SignedForm(sf, '+') for sf in f.expr.members]
-            elif isinstance(f.expr, DisForm):  # -a|b
-                a = [SignedForm(sf, '-') for sf in f.expr.members]
-            elif isinstance(f.expr, ImpForm):  # -a=>b
-                a = [SignedForm(f.expr.a, '+'),
-                     SignedForm(f.expr.b, '-')]
-        elif isinstance(f, ConForm):  # a&b&c
-            a = f.members
-        res = atables_open_branches(locfs + a, liters)
-    else:  # beta
-        alts = []
+        def check_rule(nodes, rule, nodes_mask):
+            ########################
+            # дано правило и список узлов.
+            # надо определить, есть ли среди узлов такие, что формируют предпосылку для правила
+            # если есть - вернуть индексы, соответственно порядку в правиле
+            # если нет - вернуть None
 
-        if isinstance(f, EstForm):
-            s = f.cmpsign
-            r = f.est
-            if isinstance(f.expr, ConForm):  # a&b < <= r
-                alts = [EstForm(sf, s, r) for sf in f.expr.members]
-            elif isinstance(f.expr, DisForm):  # a|b > >= r
-                alts = [EstForm(sf, s, r) for sf in f.expr.members]
-            elif isinstance(f.expr, ImpForm):  # a=>b > >= r
-                alts = [EstForm(f.expr.a, '<=',  # {'>': '<', '>=': '<='}[s],
-                                round(1 - r, 6)),
-                        EstForm(f.expr.b, s, r)]
-        elif isinstance(f, SignedForm):
-            if isinstance(f.expr, ConForm):  # -a&b
-                alts = [SignedForm(sf, '-') for sf in f.expr.members]
-            elif isinstance(f.expr, DisForm):  # +a|b
-                alts = [SignedForm(sf, '+') for sf in f.expr.members]
-            elif isinstance(f.expr, ImpForm):  # +a=>b
-                alts = [SignedForm(f.expr.a, '-'),
-                        SignedForm(f.expr.b, '+')]
+            # берём индексы узлов по маске
+            nodes_ids = [i for i in range(len(nodes)) if nodes_mask[i]]
 
-        elif isinstance(f, DisForm):
-            alts = f.members
-        for m in alts:
-            res.extend(atables_open_branches([m] + locfs, liters))
+            # v1
+            # генерируем все подстановки узлов на место выражений в правиле
+            # substitutions = generate_substitutions_rec(len(rule.format_in_f), nodes_ids)
 
-    #     elif type(f) is AtomForm:
-    #     j = consistent_insert(liters, f)
-    #     if not j is None:
-    #         res.extend(atables_open_branches(locfs, j))
-    #     else:
-    #         return []
-    #
-    # elif type(f) is DisForm:
-    # for m in f.members:
-    #     res.extend(atables_open_branches([m] + locfs, liters))
-    # elif type(f) is NegForm:
-    # sf = f.reduce()
-    # if type(sf) is AtomForm or type(sf) is NegForm and type(sf.value) is AtomForm:
-    #     j = consistent_insert(liters, sf)
-    #     if not j is None:
-    #         res.extend(atables_open_branches(locfs, j))
-    #     else:
-    #         return []
-    # else:
-    #     return atables_open_branches([sf] + locfs, liters)
-    # else:
-    # return []
-    # # print('res:', res)
-    return res
+            # for i, ids in enumerate(substitutions):
+            #     selected = [nodes[j] for j in ids]
+            #     x = rule.try_to_match(selected)
+            #     if x is not None:
+            #         return ids, x
 
+            # v2
+            # строим все возможные сопоставления всех правил и шаблонов, потом выбираем совместный набор сопоставлений
+            matches = []
+            for i, pattern in enumerate(rule.format_in_f):
+                l = []
+                for ni in nodes_ids:
+                    simple_match = try_to_match_one_formula(nodes[ni], pattern)
+                    if simple_match is not None:
+                        l.append((ni, simple_match))
+                matches.append(l)
 
-def litera_not_cover(branches, litera):
-    res = []
-    for l in branches:
-        r = consistent_insert(l, litera)
-        if r is None:
-            res.append(l)
-    return res
+            for t in product(*matches):
+                # все сопоставления должны относиться к разным формулам. поэтому считаем количество различных индексов
+                # в сопоставлении и если оно меньше числа шаблонов  в правиле - пропускаем
+                if len({x[0] for x in t}) < len(t):
+                    continue
 
-
-def filter(branches, liters):
-    res = branches.copy()
-    for l in liters:
-        res = litera_not_cover(res, l)
-        if len(res) == 0:
-            break
-    return res
-
-
-# переборный метод преобразования бз
-def KB2DNF(rs: list):
-    # print('rs={}'.format(rs))
-    if len(rs) == 0:
-        return []
-    elif len(rs) == 1:
-        if type(rs[0]) is DisForm:
-            return [consistent_insert([], a) for a in rs[0].members]
-        else:
-            return [[rs[0]]]
-    res = []
-    a = rs[0]
-    rst = KB2DNF(rs[1:])
-    # print('deb a={} rst={}'.format(a, rst))
-    if type(a) is DisForm:
-        variants = a.members
-    else:
-        variants = [a]
-    for v in variants:
-        sv = v.reduce()
-        for r in rst:
-            c = consistent_insert(r, sv)
-            if not c is None:
-                res.append(c)
-    return res
-
-
-def build_graph(P, C, Q):
-    '''
-    построение графа покрытий
-    :param P:
-    :param C:
-    :param Q:
-    :return:
-    '''
-    cs = {i: c for i, c in enumerate(C)}
-    ps = {a: {} for a in P}
-    qs = {a: {} for a in Q}
-    for i, br in enumerate(C):
-        for p in P:
-            for est in br:
-                if est.expr.name == p[0].name and est.cmpsign != p[1]:
-                    ps[p][i] = round(1 - est.est, 6)
-                    break
-        for q in Q:
-            for est in br:
-                if est.expr.name == q[0].name and est.cmpsign != q[1]:
-                    qs[q][i] = round(1 - est.est, 6)
-                    break
-
-    return cs, ps, qs
-
-
-def simplify(kb: list):
-    # def is_strong_subset(a, b):
-    #     '''
-    #     a - строгое подмножество b
-    #     все элементы a содержатся в b, и длина a меньше чем у b
-    #     :param a:
-    #     :param b:
-    #     :return:
-    #     '''
-    #     f = True
-    #     for ae in a:
-    #         f = ae in b
-    #         if not f: break
-    #     return f and len(a) < len(b)
-    #
-    # def minimal(f, kb):
-    #     '''
-    #
-    #     :param f:
-    #     :param kb:
-    #     :return:
-    #     '''
-    #     fl = True
-    #     for f2 in kb:
-    #         fl = not (is_strong_subset(f2, f))
-    #         if not fl: break
-    #     return fl
-    #
-    # res = []
-    # # kb = kb.copy()
-    # # while len(kb) > 0:
-    # #     cand = kb.pop(0)
-    # #     if minimal(cand, kb):
-    # #         res.append(cand)
-    # for cand in kb:
-    #     sc = sorted(cand, key=lambda x: str(x))
-    #     if minimal(sc, kb) and not sc in res:
-    #         res.append(sc)
-    res=[list(y) for y in sorted(list({tuple(sorted(x,key=str)) for x in kb}),key=str)]
-    return res
-
-
-def abduce_by_graph(graph, negobs, Abd):
-    C, G1, G2 = graph
-    tC = C.copy()
-    for p in negobs:
-        print(p)
-        psimplified = atables_open_branches([p])[0][0]
-        print(psimplified)
-        for i in tC:
-            print('\t', tC[i], '\t')
-
-        # tC = {i: C[i] for i in tC if not i in G1[p]}
-        tC1 = {}
-        pname = psimplified.expr.name
-        psign = psimplified.cmpsign
-
-        tC = tC1
-
-        print()
-
-        for i in tC:
-            print('\t', tC[i], '\t')
-
-    # print('Формулы БЗ, не покрытые наблюдением:')
-    # for i in tC: print('\t',i, tC[i])
-
-    cands = []
-    for i in tC:
-        for q in Abd:
-            if NegForm(q).reduce() in tC[i]:
-                cands.append(NegForm(q).reduce())
-    cands = list(set(cands))
-    # print(cands)
-
-    res = []
-
-    def reccover(uncovered: dict, candidats: list):
-        if len(uncovered) == 0:
-            return []
-        if len(candidats) == 0:
+                # надо проверить словари из списка на совместимость
+                # будем составлять общий словарь-подстановку. если получится - подстановки применима.
+                subst = {}
+                fls = []
+                for ni, pt_subst in t:
+                    subst = join_substs(subst, pt_subst)
+                    if subst is not None:
+                        fls.append(ni)
+                    else:
+                        break
+                if subst is not None:
+                    if len(rule.format_in_f_additional) == 0 or \
+                            len(rule.format_in_f_additional) > 0 and \
+                            interpret_comparison(rule.format_in_f_additional[0].subst(subst)):
+                        return fls, subst
+                    else:
+                        continue
             return None
-        res = []
-        for i in range(len(candidats)):
-            c = candidats.copy()
-            h = c.pop(i)
-            # print('h,c ',h,c)
-            new_uncovered = {k: uncovered[k] for k in uncovered if not h in uncovered[k]}
-            # print('uncov',new_uncovered)
-            if len(new_uncovered) == 0:
-                res.append([h])
-            else:
-                res.extend([[h] + l for l in reccover(new_uncovered, c)])
-        return res
 
-    res = reccover(tC, cands)
-    print('res', res)
-    minres = simplify(res)
-    print('minres', minres)
+        for rule_i, rule in enumerate(rules):
+            t = check_rule(nodes, rule, nodel_mask)
+            if t is not None:
+                matching_ids, subst_dict = t
+                return rule_i, matching_ids, subst_dict
 
-    # cands=[x for x in Abd if ]
-    # hyps = []
-    # print('Гипотезы:', hyps)
-    # cw = {a: [x for x in skb2simp if not [NegForm(a).reduce(), x] in graph] for a in observation}
-    # for a in cw: print('\t', a, cw[a])
-    # for a in cw:
-    #     l = cw[a]
-    #     best = []
-    #     candidats = abd.copy()
-    #     score = len(l)  # сколько осталось покрыть
-    #     print('a,l:', a, l)
-    #     while score > 0:
-    #         bestcand = None
-    #         bestcandscore = score
-    #         for c in candidats:
-    #             newscore = len([x for x in l if NegForm(c).reduce() in x])
-    #             if newscore < bestcandscore:
-    #                 bestcand = c
-    #                 bestcandscore = newscore
-    #                 print('cand upd', c, bestcandscore)
-    #         best.append(bestcand)
-    #         score = bestcandscore
-    #         l = [x for x in l if NegForm(bestcand).reduce() in x]
-    #         print(score, best, l)
-    return minres
+        return None
 
+
+def build_full_tree(formulas):
+    formulas = formulas.copy()
+
+    '''
+    1. выбираем формулу(ы) и правило
+    2. применяем правило
+    3. достраиваем дерево
+    4. алгоритм рекурсивный
+    '''
+    tree = atree(formulas)
+
+    tree.build()
+
+    return tree
+
+
+def get_tree():
+    formulas = '(q1=>(~p1&(~p2&(p3&p5))));((~p1&(~p2&(p3&p5)))=>q1);((p2&p4)>=0.3);((p2&p4)<=0.3);(~(q1&q3)>=0.6);((q3>=0.9)=>((~p1>=0.7)&((~p3>=0.2)&(p5>=1))))'.split(
+        ';')
+
+    parser = make_estimates_parser()
+    fl = [parse_formula(parser, formula) for formula in formulas]
+    print(str(fl))
+    tree = build_full_tree(fl)
+    dct = tree.to_dict()
+    return dct
+
+
+if __name__ == '__main__':
+    import cProfile
+
+    cProfile.run("get_tree()", filename=None, sort=-1)
