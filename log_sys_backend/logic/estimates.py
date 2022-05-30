@@ -120,7 +120,7 @@ class ImpForm(Form):
 def eval_expr(expr):
     if isinstance(expr, list):
         if expr[1] == '-':
-            return expr[0] - expr[2]
+            return round(expr[0] - expr[2], 3)
         elif expr[0] == 'max':
             return max(expr[1], expr[2])
         elif expr[0] == 'min':
@@ -133,7 +133,6 @@ def eval_expr(expr):
 
 class EstForm(Form):
     def __init__(self, expr: Form, cmpsign, est: float):
-        # TODO: использовать decimal
         self.expr = expr
         if cmpsign in ['<=', '<', '>', '>=']:
             self.cmpsign = cmpsign
@@ -141,6 +140,8 @@ class EstForm(Form):
             raise ValueError()
         if (isinstance(est, float) and est >= 0 and est <= 1) or (isinstance(est, (RuleDummyForm, list))):
             self.est = est
+            if isinstance(self.est, float):
+                self.est = round(self.est, 3)
         else:
             raise ValueError()
 

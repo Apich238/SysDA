@@ -35,43 +35,6 @@ class infrule:
             self.format_out_f = None
         self.priority = priority
 
-    # def __repr__(self):
-    #     return str([self.format_in, self.format_out_f])
-
-    # def try_to_match(self, flist, pattern=None):
-    #     if pattern is None:
-    #         pattern = self.format_in_f
-    #     if len(pattern) == 1:
-    #         # если в шаблон - только на 1 формулу, просто перебираем формулы и применяем правило, если нашлось соответствие
-    #         for sf in flist:
-    #             t = self.try_to_match_one_formula(sf, pattern[0])
-    #             if t is not None:
-    #                 return t
-    #         return None
-    #
-    #     if len(pattern) >= 2:
-    #         dummies_matching_dict = {}  # подстановка, при применении которой к шаблону получаем формулу
-    #         if len(pattern) != len(flist):
-    #             return None
-    #
-    #         for pattern_part, f in zip(pattern, flist):
-    #             x = self.try_to_match_one_formula(f.formula, pattern_part)
-    #             if x is None:
-    #                 return None
-    #             # update dict properly
-    #             for k in x:
-    #                 if not k in dummies_matching_dict:
-    #                     dummies_matching_dict[k] = x[k]
-    #                 else:
-    #                     if dummies_matching_dict[k] != x[k]:
-    #                         return None
-    #             # dummies_matching_dict.update(x)
-    #         for addcnd in self.format_in_f_additional:
-    #             a = addcnd.subst(dummies_matching_dict)
-    #             if not interpret_comparison(a):
-    #                 return None
-    #         return dummies_matching_dict
-
     def apply(self, dummies_matching_dict):
         if self.format_out_f is None:
             return None
@@ -85,7 +48,7 @@ class infrule:
 def try_to_match_one_formula(sf, pattern):
     # возвращает подстановку, если формула подходит под шаблон, и None в противном случае
 
-    #вот стоило эту функцию сделать функцией, а не методом класса, вместо 150 секунд выполнение сократилось до 0.5.
+    # вот стоило эту функцию сделать функцией, а не методом класса, вместо 150 секунд выполнение сократилось до 0.5.
 
     dummies_matching_dict = {}
     if isinstance(sf, atree):
@@ -352,12 +315,7 @@ class atree:
             t = self.select_action(branch_prefix, used_mask, rules)
             if t is not None:
                 rule_i, matching_ids, subst_dict = t
-            # 2. если не подобрали - среди всех формул
-            # print('TODO: ДОПУСКАЕТСЯ ЛИ ПОСТОРНОЕ ИСПОЛЬЗОВАНИЕ УЗЛОВ В ОДНОЙ ВЕТВИ?')
-            # if t is None:
-            #     t = self.select_action(branch_prefix, [1] * len(branch_prefix), rules)
-            #     if t is not None:
-            #         rule_i, matching_ids, subst_dict = t
+
             # 3. если и в этот раз не подобрали правило - ветвь открытая
             if t is None:
                 self.cntr.inc()
@@ -396,16 +354,6 @@ class atree:
                     ch.build(branch_prefix, used)
 
     def select_action(self, nodes, nodel_mask, rules):
-
-        # def generate_substitutions_rec(k, n_list):
-        #     if k == 1:
-        #         return [[x] for x in n_list]
-        #     ress = []
-        #     for e in n_list:
-        #         t = n_list.copy()
-        #         t.remove(e)
-        #         ress.extend([[e] + x for x in generate_substitutions_rec(k - 1, t)])
-        #     return ress
 
         def generate_substitutions_rec(k, n_list):
             if k == 1:
@@ -532,11 +480,3 @@ if __name__ == '__main__':
     import cProfile
 
     cProfile.run("get_tree()", filename=None, sort=-1)
-    # t = get_tree()
-
-    # import random
-    # import winsound
-    #
-    # for _ in range(30):
-    #     f = int(random.uniform(1024, 4096))
-    #     winsound.Beep(f, 450)
