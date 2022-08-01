@@ -1,5 +1,12 @@
-from .estimates import *
-from .inference import *
+try:
+    from .estimates import *
+except ImportError as e:
+    from estimates import *
+
+try:
+    from .inference import *
+except ImportError as e:
+    from inference import *
 
 parser = make_estimates_parser()
 

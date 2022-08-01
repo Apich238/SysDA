@@ -1,4 +1,7 @@
-from .estimates import *
+try:
+    from .estimates import *
+except ImportError as e:
+    from estimates import *
 
 
 def interpret_comparison(e: EstForm):
@@ -381,6 +384,26 @@ class atree:
 
         return None
 
+    def get_open_branches_r(self):
+        if len(self.childs) == 0:
+            if self.closed:
+                return [None]
+            else:  # opened
+                return [[]]
+        else:  # if len(self.childs)==1:
+            p = []
+            if isinstance(self.formula, EstForm) and isinstance(self.formula.expr, AtomForm):
+                p = [self.formula]
+            r = []
+            for i in range(len(self.childs)):
+                r.extend([x for x in self.childs[i].get_open_branches_r() if x is not None])
+            sr = [p + l for l in r]
+            return sr
+
+    def get_open_branches(self):
+        r = self.get_open_branches_r()
+        return list(set([tuple(x) for x in r]))
+
 
 def build_full_tree(formulas):
     formulas = formulas.copy()
@@ -398,6 +421,104 @@ def build_full_tree(formulas):
     return tree
 
 
+invsigntable = {'>=': '<',
+                '>': '<=',
+                '<=': '>',
+                '<': '>='}
+
+
+def get_nodes(ob):
+    res = []
+    for br in ob:
+        for est in br:
+            invsign = invsigntable[est.cmpsign]
+            res.append((est.expr, invsign))
+    res = list(set(res))
+    return [x for x in res if 'p' in str(x[0])], [x for x in res if 'q' in str(x[0])]
+
+
+def get_covers(branches, nodes):
+    res = {}
+    for i, b in enumerate(branches):
+        for j, n in enumerate(nodes):
+            corr = None
+            for est in b:
+                if est.expr == n[0] and n[1] == invsigntable[est.cmpsign]:
+                    res[(i, j)] = est.est
+    return res
+
+
+def cover(ct, l1, l2, method=1):
+    import numpy as np
+    res = []
+    succesful = False
+    if method == 1:
+        # greedy algorithm, sensitive to index permutation
+        ids1 = list(range(l1))
+        ids2 = list(range(l2))
+        while len(ids1) > 0:
+            mx = np.zeros([len(ids1), len(ids2)], int)
+
+            for i, k in enumerate(ids1):
+                for j, l in enumerate(ids2):
+                    if (k, l) in ct:
+                        mx[i, j] = 1
+            # выбираем столбец с наибольшим количеством единиц
+            sums = mx.sum(axis=0)
+            sel_j = np.argmax(sums)
+            sel_l = ids2[sel_j]
+            res.append(sel_l)
+            tids1 = ids1.copy()
+            for i, k in enumerate(tids1):
+                if mx[i, sel_j] == 1:
+                    ids1.remove(k)
+            ids2.pop(sel_j)
+        succesful = len(ids1) == 0
+    if method == 2:
+        # полный перебор
+        a = [[0, 1]] * l2
+        tab = []
+        from itertools import product
+        for t in product(*a):
+            covers = None
+            # check for selected items cover all left nodes
+            # if sum(t)==0:
+            #     covers=0
+            # else:
+            s = {j for j in range(l2) if t[j] == 1}
+            u = set()
+            for j in s:
+                for i in range(l1):
+                    if (i, j) in ct:
+                        u.add(i)
+            covers = len(u)
+
+            l = np.sum(t)
+            tab.append((t, (l, covers)))
+        tab1=sorted([x for x in tab if x[1][1]==l1],key=lambda x:x[1][0])
+        if len(tab1)>0:
+            succesful=True
+            res=[j for j in range(l2) if j in tab1[0][0]]
+        else:
+            succesful=False
+            res=None
+    return res, succesful
+
+def find_estimates(l,r,rCovEsts,cover):
+    #rs=[r[i] for i in cover]
+    res=[]
+
+    for j,re in enumerate(cover):
+        rt=r[re]
+        subset=[rCovEsts[i,j] for i in range(len(l)) if (i,j) in rCovEsts]
+        if rt[1] in ['>','>=']:
+            e=max(subset)
+        else:
+            e = min(subset)
+        res.append(EstForm(rt[0],rt[1],e))
+
+    return res
+
 def get_tree():
     formulas = '(q1=>(~p1&(~p2&(p3&p5))));((~p1&(~p2&(p3&p5)))=>q1);((p2&p4)>=0.3);((p2&p4)<=0.3);(~(q1&q3)>=0.6);((q3>=0.9)=>((~p1>=0.7)&((~p3>=0.2)&(p5>=1))))'.split(
         ';')
@@ -407,6 +528,24 @@ def get_tree():
     print(str(fl))
     tree = build_full_tree(fl)
     dct = tree.to_dict()
+
+    open_branches = tree.get_open_branches()
+
+    pnodes, qnodes = get_nodes(open_branches)
+
+    pnodes = sorted(pnodes, key=str)
+    qnodes = sorted(qnodes, key=str)  # [::-1]
+
+    pcovers = get_covers(open_branches, pnodes)
+    qcovers = get_covers(open_branches, qnodes)
+
+    # using p nodes to cover branches
+    cover_set, completed = cover(qcovers, len(open_branches), len(qnodes), method=2)
+
+    ests=[]
+    if completed:
+        ests=find_estimates(open_branches,qnodes,qcovers,cover_set)
+
     return dct
 
 

@@ -1,5 +1,7 @@
-from .myPEG import *
-
+try:
+    from .myPEG import *
+except ImportError as e:
+    from myPEG import *
 
 class Form:
 
